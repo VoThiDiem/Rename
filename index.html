@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trích xuất Mã SV </title>
+    <title>Trích xuất Mã SV từ Ảnh & Tạo Tên Ảnh</title>
     <!-- Thư viện OCR Tesseract.js -->
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
@@ -117,7 +117,7 @@
 <body>
 
 <div class="container">
-    <h2>Phần mềm trích xuất Mã SV</h2>
+    <h2>Trợ lý trích xuất Mã SV</h2>
     
     <div class="control-group">
         <label><strong>Số mặt (số ảnh) mỗi sinh viên làm:</strong></label>
@@ -141,20 +141,38 @@
         <button onclick="processData()" class="btn-success">Xử lý mã SV</button>
         <button onclick="addRow()">Thêm dòng trống</button>
         <button onclick="clearAllData()" class="btn-danger">🗑️ Xóa tất cả</button>
+
+        <select id="oldImagePrefix" style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
+            <option value="1" selected>1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
+            <option value="9">9</option>
+            <option value="10">10</option>
+        </select>
     </div>
 
     <div class="actions-bar">
         <span>Tổng số dòng kết quả: <strong id="rowCount">0</strong></span>
         <span>Tổng số tờ: <strong id="splitCount">0</strong></span>
-        <button id="copyBtn" onclick="copyTableToExcel()" class="btn-success" style="font-size: 15px;">📋 Copy bảng dán vào Excel</button>
+
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <button id="copyOldNameBtn" onclick="copyOldImageNames()" class="btn-success" style="font-size: 15px;">📋 Copy đường dẫn</button>
+            <button id="copyBtn" onclick="copyTableToExcel()" class="btn-success" style="font-size: 15px;">📋 Copy dán vào Excel</button>
+        </div>
     </div>
 
     <table id="resultTable">
         <thead>
             <tr>
                 <th style="width: 10%;">STT</th>
-                <th style="width: 30%;">Mã sinh viên gốc</th>
-                <th style="width: 35%;">Tên ảnh định dạng</th>
+                <th style="width: 20%;">Mã sinh viên gốc</th>
+                <th style="width: 20%;">Tên ảnh định dạng</th>
+                <th style="width: 30%;">Tên ảnh cũ</th>
                 <th style="width: 25%;">Thao tác</th>
             </tr>
         </thead>
@@ -204,12 +222,18 @@
         }
     }
 
-    function appendRowToTable(stt, msv, imageName, showPlusButton = false) {
+    function buildOldImageName(stt) {
+        const prefix = Number(document.getElementById('oldImagePrefix')?.value || 1);
+        return `${prefix} ${String(stt).padStart(3, '0')}.jpg`;
+    }
+
+    function appendRowToTable(stt, msv, imageName, oldImageName = null, showPlusButton = false) {
         const tbody = document.getElementById('tableBody');
         const row = tbody.insertRow();
-        
-        // Nếu là dòng cuối cùng mới hiện nút +1, các dòng phía trên chỉ hiện nút Xóa
-        let actionButtonsHtml = `
+
+        const finalOldName = oldImageName ?? buildOldImageName(stt);
+
+        const actionButtonsHtml = `
             <div class="action-buttons">
                 ${showPlusButton ? `<button class="btn-warning" onclick="duplicateRow(this)">+1</button>` : ''}
                 <button class="btn-danger" onclick="deleteRow(this)">Xóa</button>
@@ -220,113 +244,76 @@
             <td class="stt">${stt}</td>
             <td><input type="text" value="${msv}" placeholder="Mã SV"></td>
             <td><input type="text" value="${imageName}" placeholder="X(y).jpg"></td>
+            <td><input type="text" value="${finalOldName}" placeholder="8 001.jpg"></td>
             <td>${actionButtonsHtml}</td>
         `;
     }
 
-    function appendRowToTable(stt, msv, imageName, showPlusButton = true) {
-        const tbody = document.getElementById('tableBody');
-        const row = tbody.insertRow();
-        
-        // Nếu là dòng cuối của nhóm mặt thì hiện nút +1, các dòng trên ẩn đi để tránh bấm nhầm
-        let actionButtonsHtml = `
-            <div class="action-buttons">
-                ${showPlusButton ? `<button class="btn-warning" onclick="duplicateRow(this)">+1</button>` : ''}
-                <button class="btn-danger" onclick="deleteRow(this)">Xóa</button>
-            </div>
-        `;
-
-        row.innerHTML = `
-            <td class="stt">${stt}</td>
-            <td><input type="text" value="${msv}" placeholder="Mã SV"></td>
-            <td><input type="text" value="${imageName}" placeholder="X(y).jpg"></td>
-            <td>${actionButtonsHtml}</td>
-        `;
-    }
     function processData() {
         const rawText = document.getElementById('rawInput').value;
         const numFaces = parseInt(document.getElementById('numFaces').value);
         const lines = rawText.split('\n');
-        
         const tbody = document.getElementById('tableBody');
         tbody.innerHTML = '';
 
         let stt = 1;
         lines.forEach(line => {
-            let msv = line.trim();
-            if (msv.length > 0) {
-                let x = msv.slice(-3); 
-                for (let y = 1; y <= numFaces; y++) {
-                    let imageName = `${x}(${y}).jpg`;
-                    appendRowToTable(stt++, msv, imageName);
-                }
+            const msv = line.trim();
+            if (!msv) return;
+
+            const x = msv.slice(-3);
+            for (let y = 1; y <= numFaces; y++) {
+                const imageName = `${x}(${y}).jpg`;
+                const oldImageName = buildOldImageName(stt);
+                appendRowToTable(stt, msv, imageName, oldImageName, y === numFaces);
+                stt++;
             }
         });
+
         updateRowCount();
     }
 
     function addRow(msv = '', imageName = '') {
         const tbody = document.getElementById('tableBody');
         const stt = tbody.rows.length + 1;
-        appendRowToTable(stt, msv, imageName);
+        appendRowToTable(stt, msv, imageName, buildOldImageName(stt));
         updateRowCount();
     }
 
-    function appendRowToTable(stt, msv, imageName) {
-        const tbody = document.getElementById('tableBody');
-        const row = tbody.insertRow();
-        
-        row.innerHTML = `
-            <td class="stt">${stt}</td>
-            <td><input type="text" value="${msv}" placeholder="Mã SV"></td>
-            <td><input type="text" value="${imageName}" placeholder="X(y).jpg"></td>
-            <td>
-                <div class="action-buttons">
-                    <button class="btn-warning" onclick="duplicateRow(this)">+1</button>
-                    <button class="btn-danger" onclick="deleteRow(this)">Xóa</button>
-                </div>
-            </td>
-        `;
-    }
-
-    // Hàm nhân đôi dòng hiện tại và tăng số trong ngoặc lên 1 đơn vị ngay bên dưới
-   
     function duplicateRow(btn) {
         const currentRow = btn.closest('tr');
-        const inputs = currentRow.querySelectorAll('input');
-        const currentMsv = inputs[0].value;
-        const currentImgName = inputs[1].value;
+        const currentMsv = currentRow.cells[1].querySelector('input').value;
+        const currentImgName = currentRow.cells[2].querySelector('input').value;
 
-        // Bắt chính xác định dạng tên ảnh kiểu: 615(2).jpg hoặc 615 (2).jpg (có hoặc không có khoảng trắng)
         const match = currentImgName.match(/^(.*?)\s*\((\d+)\)(\.[^.]+)?$/);
-        
+
         let prefix = "615";
         let startNum = 1;
         let ext = ".jpg";
 
         if (match) {
             prefix = match[1].trim();
-            startNum = parseInt(match[2]) + 1; // Bắt đầu từ số tiếp theo (ví dụ đang ở (2) thì bắt đầu từ (3))
+            startNum = parseInt(match[2]) + 1;
         } else {
             prefix = currentImgName.replace(/\.[^.]+$/, '');
         }
 
-        // Lấy số mặt hiện tại từ dropdown (2 mặt hoặc 4 mặt) để biết cần sinh ra bao nhiêu dòng
         const numFaces = parseInt(document.getElementById('numFaces').value);
-        
         const tbody = document.getElementById('tableBody');
         let insertIndex = Array.from(tbody.rows).indexOf(currentRow) + 1;
 
-        // Vòng lặp sinh ra các dòng tiếp theo ngay bên dưới
         for (let i = 0; i < numFaces; i++) {
-            let currentNum = startNum + i;
-            let newImgName = `${prefix}(${currentNum})${ext}`;
+            const currentNum = startNum + i;
+            const newImgName = `${prefix}(${currentNum})${ext}`;
 
             const newRow = tbody.insertRow(insertIndex++);
+            const newStt = Array.from(tbody.rows).indexOf(newRow) + 1;
+
             newRow.innerHTML = `
-                <td class="stt"></td>
+                <td class="stt">${newStt}</td>
                 <td><input type="text" value="${currentMsv}" placeholder="Mã SV"></td>
                 <td><input type="text" value="${newImgName}" placeholder="X(y).jpg"></td>
+                <td><input type="text" value="${buildOldImageName(newStt)}" placeholder="8 001.jpg"></td>
                 <td>
                     <div class="action-buttons">
                         <button class="btn-warning" onclick="duplicateRow(this)">+1</button>
@@ -339,7 +326,7 @@
         recalculateSTT();
         updateRowCount();
     }
-   
+
     function deleteRow(btn) {
         const row = btn.closest('tr');
         row.remove();
@@ -356,23 +343,38 @@
 
     function updateRowCount() {
         const count = document.querySelectorAll('#tableBody tr').length;
-       
-        // Lấy số mặt hiện tại từ dropdown (1, 2 hoặc 4)
-        const numFaces = parseInt(document.getElementById('numFaces').value) == 1;
-        
-        // Tính splitCount dựa trên số mặt thực tế được chọn
-        const splitCount = document.querySelectorAll('#tableBody tr').length/2;
-      
-        console.log(count);
+        const numFaces = parseInt(document.getElementById('numFaces').value) || 1;
+
         document.getElementById('rowCount').innerText = count;
-        
-        document.getElementById('splitCount').innerText = splitCount;
-         const splitCountElement = document.getElementById('splitCount');
-        if (numFaces) {
-            splitCountElement.innerText = count;
+        document.getElementById('splitCount').innerText = Math.ceil(count / numFaces);
+    }
+
+    function copyOldImageNames() {
+        const rows = document.querySelectorAll('#tableBody tr');
+        if (rows.length === 0) {
+            alert("Không có dữ liệu để copy!");
+            return;
         }
 
+        let clipboardContent = "";
+        rows.forEach(row => {
+            const oldName = row.cells[3].querySelector('input').value;
+            const newName = row.cells[2].querySelector('input').value;
+            clipboardContent += `Ren "${oldName}" "${newName}"\n`;
+        });
+
+        navigator.clipboard.writeText(clipboardContent).then(() => {
+            const btn = document.getElementById('copyOldNameBtn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = "✅ Đã copy!";
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+            }, 1500);
+        }).catch(err => {
+            alert("Lỗi khi copy lệnh rename: " + err);
+        });
     }
+
     function copyTableToExcel() {
         const rows = document.querySelectorAll('#tableBody tr');
         if (rows.length === 0) {
@@ -383,45 +385,28 @@
         let clipboardContent = "";
         rows.forEach(row => {
             const inputs = row.querySelectorAll('input');
-            const stt = row.querySelector('.stt').innerText;
             const msv = inputs[0].value;
-            const imgName = inputs[1].value;
-            
-            clipboardContent += `${imgName}\n`;
+            const imageName = inputs[1].value;
+            const oldName = inputs[2].value;
+            clipboardContent += `${imageName}\n`;
         });
 
         navigator.clipboard.writeText(clipboardContent).then(() => {
             const btn = document.getElementById('copyBtn');
             const originalText = btn.innerHTML;
-            
-            // Đổi chữ và màu sắc (hoặc giữ nguyên style)
             btn.innerHTML = "✅ Đã copy!";
-            // btn.style.backgroundColor = "#ffc107"; // Đổi sang màu vàng cho nổi bật (hoặc giữ màu xanh)
-            // btn.style.color = "#212529";
-
-            // Sau 2 giây (2000 mili-giây) đổi lại như cũ
             setTimeout(() => {
                 btn.innerHTML = originalText;
-                btn.style.backgroundColor = "#28a745"; // Trả về màu xanh lá ban đầu (.btn-success)
-                btn.style.color = "white";
-            }, 2000);
-
+            }, 1500);
         }).catch(err => {
             alert("Lỗi khi copy: " + err);
         });
     }
 
     function clearAllData() {
-        // if (confirm("Bạn có chắc chắn muốn xóa toàn bộ dữ liệu không?")) {
-            // Xóa nội dung ô textarea
-            document.getElementById('rawInput').value = '';
-            
-            // Xóa sạch các dòng trong bảng kết quả
-            document.getElementById('tableBody').innerHTML = '';
-            
-            // Cập nhật lại tổng số dòng về 0
-            updateRowCount();
-        // }
+        document.getElementById('rawInput').value = '';
+        document.getElementById('tableBody').innerHTML = '';
+        updateRowCount();
     }
 </script>
 
